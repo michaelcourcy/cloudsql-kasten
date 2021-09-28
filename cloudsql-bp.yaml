@@ -1,0 +1,119 @@
+apiVersion: cr.kanister.io/v1alpha1
+kind: Blueprint
+metadata:
+  name: cloudsql-bp
+  namespace: kasten-io
+actions:
+  backup: 
+    outputArtifacts:
+      cloudObject:
+        keyValue:
+          dumpname: "{{ .Phases.initBackup.Output.dumpname }}"             
+    phases:
+    - func: KubeTask
+      name: initBackup
+      args:
+        image: ghcr.io/kanisterio/kanister-kubectl-1.18:0.57.0
+        command:
+          - sh
+          - -o
+          - errexit
+          - -o
+          - pipefail
+          - -c
+          - |
+            clusterID=$(kubectl get ns default -o jsonpath='{.metadata.uid}')
+            namespace="{{ .Object.metadata.namespace }}"
+            instance="{{ index .Object.data "instance" | toString | b64dec }}"
+            database="{{ index .Object.data "database" | toString | b64dec }}"
+            bucket="{{ index .Object.data "bucket" | toString | b64dec }}"
+            dumpdate="{{ toDate "2006-01-02T15:04:05.999999999Z07:00" .Time | date "2006-01-02T15:04:05Z07:00" | toString | replace ":" "-" | lower }}"
+            dumpname="gs://$bucket/k10/${clusterID}/cloudsql/${namespace}/${instance}/${database}_${dumpdate}.gz"            
+            kando output dumpname $dumpname  
+            sleep 3               
+    - func: KubeTask
+      name: databaseBackup  
+      objects:
+        googsecret:
+          kind: Secret
+          name: google-secret
+          namespace: kasten-io
+      args:
+        image: google/cloud-sdk:slim
+        command:
+          - /bin/bash
+          - -o
+          - errexit
+          - -o
+          - pipefail
+          - -c
+          - |
+            dumpname="{{ .Phases.initBackup.Output.dumpname }}"
+            instance="{{ index .Object.data "instance" | toString | b64dec }}"
+            database="{{ index .Object.data "database" | toString | b64dec }}"
+            bucket="{{ index .Object.data "bucket" | toString | b64dec }}"
+            json='{{ index .Phases.databaseBackup.Secrets.googsecret.Data "kasten-gke-sa.json" | toString }}'
+            echo $json > /tmp/kasten-gke-sa.json            
+            gcloud auth activate-service-account --key-file=/tmp/kasten-gke-sa.json
+            gcloud sql export sql $instance $dumpname --database=$database
+            # sleep 3 to give a chance to output logs            
+            sleep 3
+  restore:    
+    inputArtifactNames:
+    - cloudObject          
+    phases:
+    - func: KubeTask
+      name: databaseRestore
+      objects:
+        googsecret:
+          kind: Secret
+          name: google-secret
+          namespace: kasten-io
+      args:
+        image: google/cloud-sdk:slim
+        command:
+          - /bin/bash
+          - -o
+          - errexit
+          - -o
+          - pipefail
+          - -c
+          - |
+            dumpname="{{ .ArtifactsIn.cloudObject.KeyValue.dumpname }}"
+            instance="{{ index .Object.data "instance" | toString | b64dec }}"
+            database="{{ index .Object.data "database" | toString | b64dec }}"
+            bucket="{{ index .Object.data "bucket" | toString | b64dec }}"
+            json='{{ index .Phases.databaseRestore.Secrets.googsecret.Data "kasten-gke-sa.json" | toString }}'
+            echo $json > /tmp/kasten-gke-sa.json
+            gcloud auth activate-service-account --key-file=/tmp/kasten-gke-sa.json
+            gcloud --quiet sql import sql $instance $dumpname --database=$database
+            # sleep 3 to give a chance to output logs            
+            sleep 3
+  delete:    
+    inputArtifactNames:
+    - cloudObject          
+    phases:
+    - func: KubeTask
+      name: dumpDelete
+      objects:
+        googsecret:
+          kind: Secret
+          name: google-secret
+          namespace: kasten-io
+      args:
+        image: google/cloud-sdk:slim
+        command:
+          - /bin/bash
+          - -o
+          - errexit
+          - -o
+          - pipefail
+          - -c
+          - |
+            dumpname="{{ .ArtifactsIn.cloudObject.KeyValue.dumpname }}"
+            json='{{ index .Phases.dumpDelete.Secrets.googsecret.Data "kasten-gke-sa.json" | toString }}'
+            echo $json > /tmp/kasten-gke-sa.json
+            gcloud auth activate-service-account --key-file=/tmp/kasten-gke-sa.json
+            gsutil rm $dumpname
+            # sleep 3 to give a chance to output logs            
+            sleep 3              
