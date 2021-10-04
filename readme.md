@@ -5,18 +5,18 @@ We demonstrate how to use blueprint to include your cloudsql instance in your ka
 ![Situation](./clousql-situation.png)
 
 We're going to define different term that we'll reuse through this document : 
-*  <PROJECT> : the name of the google cloud you're working on for instance `rich-access-174020` 
-*  GSA : Google service account 
-*  KSA : Kubernetes Service account 
-*  <GSA_KASTEN> : the Google Service Account used by Kasten for instance `michael-sa@rich-access-174020.iam.gserviceaccount.com`
-*  <GSA_PSQL_CLIENT> : the Google Service Account used by the cloud-sql-client pod for instance  `psql-client@rich-access-174020.iam.gserviceaccount.com`
-*  <KSA_PSQL_CLIENT> : the KSA Service Account used by the cloud-sql-client pod for instance  `psql-client`
-*  <GSA_CLOUDSQL_INSTANCE> : the Google Service Account used by the cloudsql instance for instance `p215900857647-4pv8oo@gcp-sa-cloud-sql.iam.gserviceaccount.com`
-*  <CLOUDSQL_INSTANCE> : the name of the Cloud SQL instance for instance `michaeltest`
+*  <PROJECT>: the name of the google cloud you're working on for instance `rich-access-174020` 
+*  GSA: Google service account 
+*  KSA: Kubernetes Service account 
+*  <GSA_KASTEN>: the Google Service Account used by Kasten for instance `michael-sa@rich-access-174020.iam.gserviceaccount.com`
+*  <GSA_PSQL_CLIENT>: the Google Service Account used by the cloud-sql-client pod for instance  `psql-client@rich-access-174020.iam.gserviceaccount.com`
+*  <KSA_PSQL_CLIENT>: the KSA Service Account used by the cloud-sql-client pod for instance  `psql-client`
+*  <GSA_CLOUDSQL_INSTANCE>: the Google Service Account used by the cloudsql instance for instance `p215900857647-4pv8oo@gcp-sa-cloud-sql.iam.gserviceaccount.com`
+*  <CLOUDSQL_INSTANCE>: the name of the Cloud SQL instance for instance `michaeltest`
 *  <DATABASE> : the name of the database we want to save in the cloud sql instance for instance `guestbook` 
-*  <GOOGLE_STORAGE_BUCKET> : the name of the google storage bucket where you'll send the database export for instance `michael-bucket`
-*  <CLUSTER_NAME> : the name of the cluster that we create for instance `michael-cloudsqltest` 
-*  <NAMESPACE> : The namespace where you deploy your app, for instance `test-sqlinstance`
+*  <GOOGLE_STORAGE_BUCKET>: the name of the google storage bucket where you'll send the database export for instance `michael-bucket`
+*  <CLUSTER_NAME>: the name of the cluster that we create for instance `michael-cloudsqltest` 
+*  <NAMESPACE>: The namespace where you deploy your app, for instance `test-sqlinstance`
 
 # Create a postgres instance and a bucket 
 
