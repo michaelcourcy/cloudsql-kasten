@@ -16,6 +16,7 @@ We're going to define different term that we'll reuse through this document :
 *  <DATABASE> : the name of the database we want to save in the cloud sql instance for instance `guestbook` 
 *  <GOOGLE_STORAGE_BUCKET> : the name of the google storage bucket where you'll send the database export for instance `michael-bucket`
 *  <CLUSTER_NAME> : the name of the cluster that we create for instance `michael-cloudsqltest` 
+*  <NAMESPACE> : The namespace where you deploy your app, for instance `test-sqlinstance`
 
 # Create a postgres instance and a bucket 
 
@@ -50,18 +51,10 @@ We'll follow [this guide](https://cloud.google.com/sql/docs/postgres/connect-kub
 
 ## Set up workload identity 
 
-Create a GSA with roles/cloudsql.client
-
-```
-gcloud iam service-accounts create <KSA_PSQL_CLIENT>
-
-gcloud projects add-iam-policy-binding <PROJECT> --member serviceAccount:<GSA_PSQL_CLIENT> --role roles/cloudsql.client
-```
-
 Create a KSA 
 
 ```
-cat <<EOF |kubectl create -f -
+cat <<EOF |kubectl create -n <NAMESPACE> -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -69,29 +62,40 @@ metadata:
 EOF
 ```
 
+Create the <GSA_PSQL_CLIENT> with roles/cloudsql.client using for instance <KSA_PSQL_CLIENT> name as the prefix. 
+It's just convenient and could be different. For instance here you'll end up with :  
+* <KSA_PSQL_CLIENT>=psql-client  
+* <GSA_PSQL_CLIENT>=psql-client@rich-access-174020.iam.gserviceaccount.com 
+
+```
+gcloud iam service-accounts create <KSA_PSQL_CLIENT>
+
+gcloud projects add-iam-policy-binding <PROJECT> --member serviceAccount:<GSA_PSQL_CLIENT> --role roles/cloudsql.client
+```
+
 link KSA and GSA 
 
 ```
 gcloud iam service-accounts add-iam-policy-binding \
 --role="roles/iam.workloadIdentityUser" \
---member="serviceAccount:<PROJECT>.svc.id.goog[default/<KSA_PSQL_CLIENT>]" \
+--member="serviceAccount:<PROJECT>.svc.id.goog[<NAMESPACE>/<KSA_PSQL_CLIENT>]" \
 <GSA_PSQL_CLIENT>
 
-kubectl annotate serviceaccount \
+kubectl annotate serviceaccount -n <NAMESPACE> \
 <KSA_PSQL_CLIENT> \
 iam.gke.io/gcp-service-account=<GSA_PSQL_CLIENT>
 ```
 
-## create a deployment to this instance plus a regular stateful workload
+## create a deployment to this instance plus a regular mysql stateful workload
 
 ```
-kubectl create -f cloudsql-client.yaml
+kubectl create -n <NAMESPACE> -f cloudsql-client.yaml
 ```
 
 Connect to the psql-client container and create the database <DATABASE>.
 
 ```
-kubectl exec -it deploy/cloud-sql-client -c psql-client -- bash
+kubectl -n <NAMESPACE> exec -it deploy/cloud-sql-client -c psql-client -- bash
 psql -h 127.0.0.1 -U postgres
 postgres=> \l
                                                 List of databases
@@ -120,8 +124,8 @@ INSERT 0 1
 ## Create a mysql server in the same namespace
 
 ```
-kubectl create -f mysql.yaml
-kubectl exec -ti sts/mysql -- bash
+kubectl -n <NAMESPACE> create -f mysql.yaml
+kubectl -n <NAMESPACE> exec -ti sts/mysql -- bash
 
 mysql --user=root --password=ultrasecurepassword
 CREATE DATABASE test;
@@ -139,7 +143,7 @@ SELECT * FROM pets;
 
 # install Kasten 
 
-Now in the default namespace we have a cloudsql client pod and a mysql server pod with a pvc. We want to backup all this elements in sync with the database in the cloud sql instance.
+Now in the <NAMESPACE> namespace we have a cloudsql client pod and a mysql server pod with a pvc. We want to backup all this elements in sync with the database in the cloud sql instance.
 
 Make sure that <GSA_KASTEN> has roles/compute.storageAdmin to backup the google disk pvc. 
 
@@ -178,12 +182,14 @@ kubectl create secret generic <CLOUDSQL_INSTANCE>-<DATABASE> \
  --from-literal=instance=<CLOUDSQL_INSTANCE> \
  --from-literal=database=<DATABASE> \
  --from-literal=bucket=<GOOGLE_STORAGE_BUCKET> \
- --namespace=default
-kubectl annotate secret -n default <CLOUDSQL_INSTANCE>-<DATABASE> kanister.kasten.io/blueprint='cloudsql-bp'
+ --namespace=<NAMESPACE>
+kubectl annotate secret -n <NAMESPACE> <CLOUDSQL_INSTANCE>-<DATABASE> kanister.kasten.io/blueprint='cloudsql-bp'
 ```
 
 
 # Test backup
+
+`kubectl --namespace kasten-io port-forward service/gateway 8080:8000`
 
 Create a policy with an export to the bucket and run it. 
 
@@ -195,7 +201,7 @@ You should see an sql export in gz format in `gs://$bucket/k10/${clusterID}/clou
 
 Delete the resource in the namespace
 ```
-kubectl delete deploy,sts,pvc,secret --all
+kubectl delete ns <NAMESPACE>
 ```
 
 Delete and recreate the database <DATABASE>
@@ -222,7 +228,7 @@ When it's finished check your data are all back.
 
 Check the sql instance :
 ```
-kubectl exec -it deploy/cloud-sql-client -c psql-client -- bash
+kubectl -n <NAMESPACE> exec -it deploy/cloud-sql-client -c psql-client -- bash
 root@cloud-sql-client-5f8546d884-v867n:/# psql -h 127.0.0.1 -U postgres
 Password for user postgres: 
 psql (13.4 (Debian 13.4-1.pgdg110+1), server 13.3)
@@ -246,7 +252,7 @@ exit
 
 Check the mysql pod 
 ```
-kubectl exec -ti sts/mysql -- bash
+kubectl -n <NAMESPACE> exec -ti sts/mysql -- bash
 root@mysql-0:/# mysql --user=root --password=ultrasecurepassword
 mysql: [Warning] Using a password on the command line interface can be insecure.
 Welcome to the MySQL monitor.  Commands end with ; or \g.
